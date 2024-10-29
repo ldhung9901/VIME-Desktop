@@ -1822,5 +1822,6 @@
     "vime.checkOut":"check-out",
     "error.cardTypeNotMatch":"Mã thẻ đã được sử dụng bởi loại thẻ khác",
     "error.syncUserFailed":"Đồng bộ người dùng thất bại",
-    "error.biostationUserNotFound":"Không tìm thấy người dùng đã đồng bộ"
+    "error.biostationUserNotFound":"Không tìm thấy người dùng đã đồng bộ",
+    "vime.getImageFromReader":"Lấy hình ảnh từ đầu đọc"
 }

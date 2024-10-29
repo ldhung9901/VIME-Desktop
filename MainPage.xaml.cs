@@ -7,24 +7,36 @@ namespace VimeDesktopApp;
 
 public partial class MainPage : ContentPage
 {
-    private static readonly VnIdcard CardReader = new VnIdcard();
-    private static CardInfo _cardInfo;
+    private static bool _continue = true;
+    private static readonly VnIdcard VnIdcard = new VnIdcard();
+    private static CardInfo _cardInfo =  new CardInfo();
+
     public MainPage()
     {
-        _cardInfo = new CardInfo();
+        var thread = new Thread(UserEnrollmentAutomation);
+        thread.Start();
         InitializeComponent();
-        CardReader.OnStatusChanged += CardReader_OnStatusChanged;
-        CardReader.StartMonitor(false);
+       
     }
     [JSInvokable]
     public static CardInfo CheckBattery()
     {
-      
-
-       
         return _cardInfo;
     }
-    private static void CardReader_OnStatusChanged(object sender, StatusChangeEventArgs e)
+    [STAThread]
+    private static void UserEnrollmentAutomation()
+    {
+        VnIdcard.OnStatusChanged += Vn_OnStatusChanged;
+        VnIdcard.StartMonitor(false);
+        while (_continue)
+        {
+           
+            Thread.Sleep(100);
+        }
+        VnIdcard.StopMonitor();
+    }
+
+    private static void Vn_OnStatusChanged(object sender, StatusChangeEventArgs e)
     {
         Console.WriteLine($"Device {e.ReaderName} change stated from: {e.LastState} to: {e.NewState}.");
         if (e.LastState != SCRState.Empty || e.NewState != SCRState.Present)
@@ -32,13 +44,18 @@ public partial class MainPage : ContentPage
 
         try
         {
-         
-            var result = TryScanCard(e.ReaderName);
-            _cardInfo.BackImage = result.BackImage;
-            _cardInfo.FrontImage = result.FrontImage;
-            _cardInfo.FaceImage = result.FaceImage;
+            string canCode = ""; //You can get it from OCR scan image; Example: 009904, 
+            string MRZ = ""; //You can get it from OCR scan image; Example: "IDVNM0d580000221034058000026<<45810262M9912315VNM<<<<<<<<<<<0NGUYEN<<VAN<TY<<<<<<<<<<<<<<<<";
 
+            TryScanCard(); //Only support on SCAN-READER
+            canCode = VnIdcard.GetOcrCanCode();
+           
 
+            VnIdcard.ReadCard(e.ReaderName, canCode, MRZ);
+            //Console.WriteLine($"FaceImage lafffff: {_vnIdcard.GetChipFaceImage().Substring(0, 200)}...");
+            _cardInfo.FullName = VnIdcard.GetPersonalDetail().Name;
+            _cardInfo.FaceImage =  VnIdcard.GetChipFaceImage();
+            _cardInfo.IdentityNumber = VnIdcard.GetPersonalDetail().DocumentNumber;
         }
         catch (Exception ex)
         {
@@ -46,73 +63,49 @@ public partial class MainPage : ContentPage
         }
         finally
         {
-            CardReader.RejectCard(); //Only support on SCAN-READER
+            VnIdcard.RejectCard(); //Only support on SCAN-READER
         }
     }
-    [STAThread]
-    private static  CardInfo TryScanCard(string readerName)
+    private static bool TryScanCard()
     {
+        Console.WriteLine("Trying scan card...");
         try
         {
-            var scanResult = CardReader.ScanCard(true);
-            var cardInfo = new CardInfo
+            bool scanResult = VnIdcard.ScanCard(true);
+            //Convert to jpeg base64
+            if (scanResult && VnIdcard.GetScanImage() != null && VnIdcard.GetScanImage().Front != null)
             {
-                FaceImage = null,
-                BackImage = null,
-                FrontImage = null
-
-            };
-            if (scanResult)
-            {
-                // Xử lý hình ảnh mặt trước
-                var frontImage = CardReader.GetScanImage()?.Front;
-                if (frontImage != null)
-                {
-                    var jpgFront = frontImage.ToMemoryStream(".jpg").ToArray();
-                    var scanFront = Convert.ToBase64String(jpgFront);
-                    cardInfo.FrontImage = scanFront;
-                }
-
-                // Xử lý hình ảnh mặt sau
-                var backImage = CardReader.GetScanImage()?.Back;
-                if (backImage != null)
-                {
-                    var jpgBack = backImage.ToMemoryStream(".jpg").ToArray();
-                    var scanBack = Convert.ToBase64String(jpgBack);
-                    cardInfo.BackImage = scanBack;
-
-
-
-                    // BackImageData = ConvertBase64ToImage(scanBack);
-                }
-
-                var canCode = CardReader.GetOcrCanCode();
-                var mrz = CardReader.GetChipMRZ();
-                CardReader.ReadCard(readerName, canCode, mrz);
-                cardInfo.FaceImage = CardReader.GetChipFaceImage();
-
+                var jpgFront = VnIdcard.GetScanImage().Front.ToMemoryStream(".jpg").ToArray();
+                //File.WriteAllBytes("D:/front.jpg", jpgFront);
+                var scanFront = Convert.ToBase64String(jpgFront);
+                _cardInfo.FrontImage = scanFront;
             }
-
-            return cardInfo;
+            if (scanResult && VnIdcard.GetScanImage() != null && VnIdcard.GetScanImage().Back != null)
+            {
+                var jpgBack = VnIdcard.GetScanImage().Back.ToMemoryStream(".jpg").ToArray();
+                //File.WriteAllBytes("D:/back.jpg", jpgBack);
+                var scanBack = Convert.ToBase64String(jpgBack);
+                _cardInfo.BackImage = scanBack;
+            }
+            var cancode = VnIdcard.GetOcrCanCode();
+            if (!string.IsNullOrEmpty(cancode))
+            {
+                Console.WriteLine($"CanCode from Image OCR: {cancode}");
+            }
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            Console.WriteLine(e);
-            // CardReader.RejectCard();
+            Console.WriteLine("Scan error: " + ex.Message);
         }
-        finally
-        {
-            CardReader.RejectCard();
-        }
-
-        return new CardInfo();
-
+        return false;
     }
 }
 
 public class CardInfo
 {
     public string? FaceImage { get; set; }
+    public string? FullName { get; set; }
+    public string? IdentityNumber { get; set; }
     public string? BackImage { get; set; }
     public string? FrontImage { get; set; }
 }
